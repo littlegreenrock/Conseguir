@@ -1,4 +1,4 @@
-#define mDEBUG
+//#define mDEBUG
 #define DEBUG 1
 /*
  * 
@@ -15,8 +15,6 @@ const uint8_t Led_Red = 10;
 const uint8_t Door_Pin = 12;
 const uint8_t wakePin = 2;
 
-//using namespace std;
-//#include "memdebug.h"
 #include <avr/sleep.h>
 #include <avr/wdt.h>
 #include <stdint.h>
@@ -25,16 +23,13 @@ const uint8_t wakePin = 2;
 #include <Keypad.h>
 #include <EEPROM.h>
 #include <Wire.h>
-//#define MAPSIZE 4
-//#define LIST_MAX 4
-
 
 #include "MenuData.h"
 #include "myMenu.h"
 #include "HookEE.h"
 #include "safeMan.h"
 
-#ifdef KEYPAD_H
+#ifdef KEYPAD_H 
 	const byte ROWS = 4; //four rows
 	const byte COLS = 3; //four columns
 	char numericKeys[ROWS][COLS] = {
@@ -58,64 +53,9 @@ adminmenu* Admin {nullptr};
 // static classes
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 safeMan Idle;
-//adminmenu AM(0);
+//naviFramework Navigator(SetCode);
 
-ISR (WDT_vect) {  // watchdog interrupt
-	 wdt_disable();  // disable watchdog
-}  // end of WDT_vect
-void sleep_watchdog() {
-	ADCSRA = 0;  
-	MCUSR = 0;     
-	WDTCSR = bit (WDCE) | bit (WDE);
-	//WDTCSR = bit (WDIE) | bit (WDP2) | bit (WDP1);    // set WDIE, and 1 second delay
-	WDTCSR = bit (WDIE) | bit (WDP3) | bit (WDP0);    // set WDIE, and 8 seconds delay
-	wdt_reset();  // pat the dog
-	set_sleep_mode (SLEEP_MODE_PWR_DOWN);  
-	noInterrupts ();           // timed sequence follows
-	sleep_enable();
-	// turn off brown-out enable in software
-	MCUCR = bit (BODS) | bit (BODSE);
-	MCUCR = bit (BODS); 
-	interrupts ();             // guarantees next instruction executed
-	sleep_cpu ();  
-	// cancel sleep as a precaution
-	sleep_disable();
-}
-void sleep_interrupt() {
-	ADCSRA = 0;  
-	set_sleep_mode (SLEEP_MODE_PWR_DOWN);  
-	sleep_enable();
-	noInterrupts ();
-	// will be called when pin D2 goes low  
-	attachInterrupt (0, wake, FALLING);
-	EIFR = bit (INTF0);  // clear flag for interrupt 0
-	MCUCR = bit (BODS) | bit (BODSE);
-	MCUCR = bit (BODS); 
-	interrupts ();  // one cycle
-	sleep_cpu ();   // one cycle
-	sleep_disable();  // precautionary
-}
-void wake() {
-	sleep_disable();
-	detachInterrupt (0);   // precautionary
-}
-void dln() {
-	Serial.println(); }
-template<typename TT, typename... Ttypes>
-void dln(TT first, Ttypes... Other) {
-	if (DEBUG) Serial.print(first);
-	else NULL;
-	dln(Other...);
-}
-uint32_t generateRandomSeed() {
-	int32_t seed;
-	for (int i = 0; i < 6; i++) {
-		seed += analogRead(i);
-		seed *= analogRead(i);
-	}
-	//dln("\n----\trnd seed: ", abs(seed));
-	return abs(seed);
-}
+
 /* BEGIN Functions  °º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸  */
 
 void safeMan::initStandbyMode() {  
@@ -130,7 +70,6 @@ void safeMan::initStandbyMode() {
 	delete Admin;
 	Kiosk = nullptr;
 	Admin = nullptr;
-	delay(50);
 };
 void safeMan::initAdminMode() {  
 		//  execute ADMIN conditions, once.
@@ -138,7 +77,8 @@ void safeMan::initAdminMode() {
 	setMode(ADMIN);
 	analogWrite(Led_Red, 0x10); // friendly glow
 	//singer(Beep);
-	Admin = new adminmenu(0);  // dummy arg 
+  //settings::getMiCoLe();
+	Admin = new adminmenu();
 	
 };
 void safeMan::initKioskMode() {  
@@ -147,19 +87,20 @@ void safeMan::initKioskMode() {
 	setMode(KIOSK);
 	digitalWrite(Led_Red, LOW); // extinguish
 	//singer(Beep);
-	Kiosk = new kioskmenu(5,9,4,1); // placeholder args for (mincodelength, maximum user entered digits, user cursor col, user cursor row(0 indexed))
+  //settings::getMiCoLe()
+	Kiosk = new kioskmenu(5,9,4,1); // placeholder args for [mincodelength, maximum user entered digits, user cursor col, & user cursor row(both 0 indexed)]
 };
 
-char keyPress()	{
+char singleKeyPress()	{
 	char key = KP.getKey();
 	if (isDigit(key))  {
 		singer(NavUD);
-    if (key == '4' || key == '1') navD = Prev;
-    else if (key == '6' || key == '9') navD = Next;
+		if (key == '4' || key == '1') navD = Prev;
+		else if (key == '6' || key == '9') navD = Next;
 		}
-  else if (key == '#') navD = Selct;
-  else if (key == '*') navD = Esc;
-	else if (Idle.checkForPausedRanout()) key='.';
+	else if (key == '#') navD = Selct;
+	else if (key == '*') navD = Esc;
+	else if (Idle.checkIfStillPaused()==-1) key='.';
 	else key = 0;
 	return key;
 		/*  ie: return KP.getKeys();
@@ -172,55 +113,62 @@ char keyPress()	{
 };
 
 char DeyBored() {
-  char key{};
-  nav myNav;
-  if (KP.getKeys()) {
-    for (int i = 0; i < 4; i++)  // Scan first 4 from key list.
-    {
-      if (KP.key[i].stateChanged) {
-        switch (KP.key[i].kstate) {
-          case PRESSED:
-            key = KP.key[i].kchar;
-            if (isDigit(key)) {
-              singer(NavUD);
-              if (key == '4' || key == '1') myNav = Prev;
-              else if (key == '6' || key == '9') myNav = Next;
-            } else {
-              if (key == '#') myNav = Selct;
-              else if (key == '*') myNav = Clr;
-            }
-            Serial.print(key);
-            break;
-          case HOLD:
-            if (KP.key[i].kchar == '0') myNav = All;
-            break;
-          case RELEASED:
-            Idle.act();
-            if (KP.key[i].kchar == '*') myNav = Esc;
-            break;
-        }  //  END switch
-      } else {
-        if ((KP.key[KP.findInList('#')].kstate == HOLD)
-            && (KP.key[KP.findInList('*')].kstate == HOLD)
-            && Idle.getMode(KIOSK)) {
-          dln("That there is a spare armadillo");
-          myNav = LhAS;
-        }
-      }
-    }
-  } else if (Idle.checkForPausedRanout()) {
-    key = '.';
-    myNav = Paws;
-  } else {
-    key = 0;
-    myNav = Stat;
-  }
-  if (navD!=myNav) {
-    navD=myNav;
-  }
-  return key;
+	char key{};
+	nav myNav;
+	if (KP.getKeys()) {
+		for (int i = 0; i < 4; i++)  // Scan first 4 from key list.
+		{
+			if (KP.key[i].stateChanged) {
+				switch (KP.key[i].kstate) {
+					case PRESSED:
+						key = KP.key[i].kchar;
+						if (isDigit(key)) {
+							singer(NavUD);
+							if (key == '4' || key == '1') myNav = Prev;
+							else if (key == '6' || key == '9') myNav = Next;
+						}else {
+							if (key == '#') myNav = Selct;
+							else if (key == '*') myNav = Clr;
+						}
+						 //Serial.print(key);	// faster, handle 4 easily
+						break;
+					case HOLD:
+						if (KP.key[i].kchar == '0') myNav = All;
+						if (KP.key[i].kchar == '*') myNav = Esc;
+						break;
+					case RELEASED:
+						//Idle.act();
+						break;
+				}  //  END switch
+			} else {
+				if ((KP.key[KP.findInList('#')].kstate == HOLD)
+						&& (KP.key[KP.findInList('*')].kstate == HOLD)
+						&& Idle.getMode(KIOSK)) {
+					myNav = LhAS;
+					key = 'x';
+				}
+			}
+		}
+	// } else if (Idle.checkIfStillPaused()==-1) {
+	// 	key = '.';
+	// 	myNav = Paws;
+	} else {
+		key = 0;
+		myNav = Stat;
+	}
+	if (navD!=myNav) {
+		navD=myNav;
+	}
+	return key;
 };
 
+void nTest(nav D){
+
+}
+void nText(navTEXT N) {
+  if (N == SetMaxKeys) Admin->drillDown(N);
+  else if (N == mCodeLen) Admin->drillDown(N);
+}
 
 /*  °º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸ END Functions */
 
@@ -240,52 +188,51 @@ void setup() { /*   (ノಠ益ಠ)ノ彡   ::   BEGIN SETUP   ::   ┌∩┐(⋟
 	digitalWrite(wakePin, HIGH);  // enable PULLUP for INPUT pin
 	Idle.blinkieSetup(1000, 5);
 	KP.addEventListener(kpEvent);		//	TODO: wtf does this do?
-	KP.setHoldTime(350);
-  randomSeed(generateRandomSeed());
+	KP.setHoldTime(500);
+	randomSeed(generateRandomSeed());
 	singer(navTEXT::Beep);
   
+	
 };    // END setup()
 
 void loop() { /*   ┌∩┐(◣_◢)┌∩┐   ::   BEGIN LOOP   ::   (╯°□°）╯︵ ┻━┻   */
-	circumState Md = Idle.checkDoor();	// replaces blinky and checkSecurity
-  char kP{};
-	//kP = keyPress();		// Only returns one keypress at a time
-  kP=DeyBored();
+	// Heartbeat
+	char kP{};		//kP = singleKeyPress();
+	kP=DeyBored();
+	int8_t paw = Idle.checkDoor((kP));
+	circumState Md = Idle.getMode();
+	if (paw==-1) {
+		kP=='.';  navD=Paws;  	}
+	
+	
+
+	//if (isPrintable(kP)) Serial.print(kP);	// bad for simultaneous presses. Fine for multiple keys, two finger typing.
 	
 	if (kP && Md==KIOSK) Kiosk->main(kP);
-	if (kP && Md==ADMIN) Admin->main(kP);	
+	if (kP && Md==ADMIN) Admin->main(kP, navD);	
 	
 };    // END loop()
 
 
 
 void kpEvent(KeypadEvent key) {
-		// enum nav : int8_t { 
-		// 	Prev  = -1,		Selct	= 0x20,		uUp   = 0x30,
-		// 	Next  = +1,		Esc		= 0x21,		uDn		= 0x31,
-		// 	Up		= -10,  All		= 0x22,		
-		// 	Dn		= +10,	LSta	= 0x24, 
-		// 	Stat  =  0,		LHas	= 0x28,
-		// };
 	switch (KP.getState()) {
 		case PRESSED:
+			Idle.act();
 			break;
 		case RELEASED:
-      Idle.act();
-			if (key == '*') {}
 			break;
 		case HOLD:
-      if (key == '0') dln("double handling -> navD = All");
-      if (key == '*') dln("cancel-Esc");
+			if (key == '0' && KP.keyStateChanged()) navD=All;
 			break;
 	}
 };
 
 
 
-  
-    
-    
-    
+	
+		
+		
+		
 
 

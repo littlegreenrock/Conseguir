@@ -24,27 +24,17 @@ template<typename TT, typename... Ttypes>
 void dln(TT first, Ttypes... Other) ;
 using int_array = int const[];
 
-
-enum justification { 
+enum justification : uint8_t { 
 	none,left,center,right,
-}; /*  */
+}; /*	0, 0x01, 0x02, 0x03  		*/
 
 enum nav : int8_t { 
-  Prev  = -1,		Selct	= 0x20,		uUp   = 0x30,
-  Next  = +1,		Esc		= 0x21,		uDn		= 0x31,
-  Up		= -10,  All		= 0x22,		Paws  = 0x32,
-  Dn		= +10,	Clr 	= 0x24, 
-  Stat  =  0,		LhAS	= 0x28,
+	Prev  = -1,		Selct	= 0x20,		uUp   = 0x30,
+	Next  = +1,		Esc		= 0x21,		uDn		= 0x31,
+	Up		= -10,  All		= 0x22,		Paws  = 0x32,
+	Dn		= +10,	Clr 	= 0x24, 
+	Stat  =  0,		LhAS	= 0x28,
 };
-
-// enum nav : int8_t { 
-// 	Prev  = -1,		Selct	= 0x20,
-// 	Next  = +1,		Esc		= 0x21,
-// 	Up		= -10,  uUp   = 0x22,
-// 	Dn		= +10,	uDn   = 0x24, 
-// 	Stat  =  0,		All   = 0x28,
-// };
-
 
 enum navTEXT : uint8_t {
 	/*0*/	 Blank				= 0x00, EnterCode	= 0x01, Success			= 0x02,
@@ -59,73 +49,6 @@ enum navTEXT : uint8_t {
 	/*3*/	 mCodeLen			= 0x30, setDate		= 0x31, setTime			= 0x32,
 	/* */	 setTZ				= 0x33, T1CtRTA		= 0x34, 
 }; 
-
-typedef struct {
-	 char label [17];
-	 uint8_t value;  
-} mLabel;
-			//	b		7			6			5			4			3			2			1			0
-			//	f		x80		x40		x20		x10		x08		x04		x02		x01
-			//                  R	+C+	L									act			subM
-
-const mLabel kioskMap [13] PROGMEM = { 	// Tier 0. Parent 0
-	{		""								,0x00	},
-	{	 "Enter code"				,0x11	},	
-	{	 "Success!"					,0x12	},	
-	{	 "Take your key."		,0x33	},	
-	// alt.: "*Esc|Ent# \x38\x02\x32\x01";
-	{	 "*Esc \x02\x38  \x32\x01 Ent#"	,0x14	},	
-	{	 "\x02[8]  Cancel [*]"	,0x15	},	
-	{	 "For help: hold *"	,0x16	},	
-	{	 "which hook?"			,0x17	},	
-	{	 "ALL? (hold 0)"		,0x28	},	
-	{	 "are you sure?"		,0x39	},	
-	{	 "Cancelled"				,0x3a	},	
-	{	 "  8  16  24  32"	,0x1b	},	
-	{	 "Rule Them All"		,0x3c	},	
-};
-const mLabel adminMap [6] PROGMEM = {  // Tier 1. Parent 1
-	{	"Set Code"					,0x10	},	
-	{	"Show Code(s)"			,0x11	},	
-	{	"Install Key"				,0x12	},	
-	{	"Clear Code(s)"			,0x13	},	
-	{	"Drop Key(s)"				,0x14	},	
-	{	"Device settings"		,0x15	},	
-};
-const mLabel settingMap [5] PROGMEM = {  // Tier 2. Parent 1
- 	{	 "Set Max Keys"			,0x10	},	
-	{	 "Keypad backlight"	,0x11	},	
-	{	 "LCD backlight"		,0x12	},	
-	{	 "Beep volume"			,0x13	},	
-	{	 "Admin. mode"			,0x14	},	
-};
-const mLabel suPrefsMap [5] PROGMEM = {	// Tier 3. Parent 2. 
-	{	 "_min code length"	,0x20	},	
-	{	 "_set date"				,0x21	},	
-	{	 "_set time"				,0x22	},	
-	{	 "_set time zone"		,0x23	},	
-	{	 "The One Code to"	,0x24	},	
-};
-
-// array of function pointers
-void (*doAdminActions []) () =
- {
- [] { Serial.println (0); } ,
- [] { Serial.println (1); } ,
- [] { Serial.println (2); } ,
- [] { Serial.println (3); } ,
- [] { Serial.println (4); } ,
- [] { Serial.println (5); } ,
- };
-
-typedef navTEXT (*DrillDownFun) (nav);
-
-
-const uint8_t menuMapSizes[] = {13,6,5,5};    // 1-idx
-
-const mLabel* mLabelGroup[] = {
-	kioskMap, adminMap, settingMap, suPrefsMap 
-};
 
 uint8_t T[][7] {		//[8]
 		// parent-Tier,
@@ -144,6 +67,101 @@ navTEXT L[][6] {
 	{mCodeLen, setDate, setTime, setTZ, T1CtRTA},
 	//{Success, TakeKey, NavLR, NavUD, NavHELP, MaxHooks, TheOtherOne},
 }; 
+
+extern void nTest(nav);
+extern void nText(navTEXT);
+
+// array of function pointers
+void (*doAdminActions []) () =
+{
+	[] {  //  SetCode ----
+		;		},
+	[] {  //  ShowCode 
+		;		},
+	[] {  //  Install 
+		;		},
+	[] {  //  Clear 
+		;		},
+	[] {  //  Drop 
+		;		},
+	[] {  //  DevSetting 
+		  nText(SetMaxKeys);		},
+			
+	[] {  //  SetMaxKeys ----
+		;		},
+	[] {  //  KP_BL 
+		;		},
+	[] {  //  LCD_BL 
+		;		},
+	[] {  //  Beep 
+		;		},
+	[] {  //  SuSetting 
+		nText(mCodeLen);		},
+			
+	[] {  //  mCodeLen ----
+		;		},
+	[] {  //  setDate 
+		;		},
+	[] {  //  setTime 
+		;		},
+	[] {  //  setTZ 
+		;		},
+	[] {  //  T1CtRTA 
+		;		},
+};
+
+
+typedef struct {
+	 char label [17];
+	 uint8_t value;  // doAdminAction[idx]
+} mLabel;
+
+const mLabel kioskMap [13] PROGMEM = { 	// Tier 0. Parent 0
+	{  ""									,0x4f	},
+	{  "Enter code"				,0x4f	},	
+	{	 "Success!"					,0x8f	},	
+	{	 "Take your key."		,0x8f	},	
+	{	 "*Esc \x02\x38  \x32\x01 Ent#"	,0xcf	},	
+	{	 "\x02[8]  Cancel [*]"	,0x8f	},	
+	{	 "For help: hold *"	,0x4f	},	
+	{	 "which hook?"			,0x4f	},	
+	{	 "ALL? (hold 0)"		,0x4f	},	
+	{	 "are you sure?"		,0x8f	},	
+	{	 "Cancelled"				,0x8f	},	
+	{	 "  8  16  24  32"	,0x4f	},	
+	{	 "Rule Them All"		,0xcf	},	
+};
+const mLabel adminMap [6] PROGMEM = {  // Tier 1. Parent 1
+	{	"Set Code"					,0x40	},	
+	{	"Show Code(s)"			,0x41	},	
+	{	"Install Key"				,0x42	},	
+	{	"Clear Code(s)"			,0x43	},	
+	{	"Drop Key(s)"				,0x44	},	
+	{	"Device settings"		,0x45	},	
+};
+const mLabel settingMap [5] PROGMEM = {  // Tier 2. Parent 1
+ 	{	 "Set Max Keys"			,0x46	},	
+	{	 "Keypad backlight"	,0x47	},	
+	{	 "LCD backlight"		,0x48	},	
+	{	 "Beep volume"			,0x49	},	
+	{	 "Admin. mode"			,0x4a	},	
+};
+const mLabel suPrefsMap [5] PROGMEM = {	// Tier 3. Parent 2. 
+	{	 "_min code length"	,0xcb	},	
+	{	 "_set date"				,0xcc	},	
+	{	 "_set time"				,0xcd	},	
+	{	 "_set time zone"		,0xce	},	
+	{	 "The One Code to"	,0xcf	},	
+};
+
+typedef navTEXT (*DrillDownFun) (nav);
+
+
+const uint8_t menuMapSizes[] = {13,6,5,5};    // 1-idx
+
+const mLabel* mLabelGroup[] = {
+	kioskMap, adminMap, settingMap, suPrefsMap 
+};
 
 // // Print a string from Program Memory directly to save RAM 
 // void progressivePrint (const char * str) {
@@ -234,5 +252,29 @@ const int _Note_Hz440[61] PROGMEM = {
 		1175, 1245, 1319, 1397, 1480, 1568, 1661, 1760, 1865, 1976,  
 		2093, 
 		};
+
+// typedef struct {
+// 	 uint8_t N;
+// 	 uint8_t D;
+// 	 uint8_t V;
+// 	 uint8_t T;
+// } ndvt;
+
+
+// const ndvt Requests [8] PROGMEM = {
+// 	{  0,  0,  0,  0 },		//	Blank
+// 	{ 30, 25, 30,  7 },		//	Success
+// 	{	28, 25, 30,  7 },		//	Beep
+// 	{ 22, 25, 30,  5 },		//	Cancelled
+// 	{ 23, 15, 20,  5 },		//	NavLR
+// 	{ 22, 15, 20,  5 },		//	NavUD
+// 	{ 18,  5, 20,  5 },		//	AreYouSure
+// 	{ 21, 15, 20,  5 },		//	Clear
+// };
+
+// ndvt requestNote (uint8_t n) {
+// 	return (Requests[n]);
+// }
+
 
 #endif /* MenuData.h */

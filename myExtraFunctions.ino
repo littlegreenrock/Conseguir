@@ -1,35 +1,25 @@
 
-class ezcursor {
-  private:
-    bool _NoEnd;  //  = to loop at ends, or stop at ends
-    const int _Lowest;    //  = lowestlowable Lowest Number;  (Const)
-    const int _TotalNo;   //  = number Of Entries;        (Const)
-    const int _Highest;   //  = lowestlowable Highest number  (Const) (may differ from _TotalNo);
-  public:
-    ezcursor(const int lowest, const int NofEntries, const int highest, bool scrollPref = true)
-      : _Lowest{ lowest }, _TotalNo{ NofEntries }, _Highest{ highest }, _NoEnd{ scrollPref } {};
-    ~ezcursor(){};
-
-    int eZCursor(int cursPos, int dir_w_Mag) {
-        /*   
-          cursPos = position/index/marker
-          dM  = direction and magnitude (ie: -1, +1, up, down)
-        */
-      int newCursPos;
-      if (_NoEnd) newCursPos = ((cursPos + dir_w_Mag + _TotalNo - _Lowest) % _TotalNo) + _Lowest;
-      else {
-        if (cursPos > _Highest) newCursPos = _Highest;
-        else if (cursPos < _Lowest) newCursPos = _Lowest;
-      }
-      return newCursPos;
-    }
-    void setScrollPref(bool scrollPref) {
-      _NoEnd = scrollPref;
-    }
-};  //    END class ezCursor
+void dln() {
+  Serial.println();
+}
+template<typename TT, typename... Ttypes>
+void dln(TT first, Ttypes... Other) {
+  if (DEBUG) Serial.print(first);
+  else NULL;
+  dln(Other...);
+}
+uint32_t generateRandomSeed() {
+  int32_t seed;
+  for (int i = 0; i < 6; i++) {
+    seed += analogRead(i);
+    seed *= analogRead(i);
+  }
+  //dln("\n----\trnd seed: ", abs(seed));
+  return abs(seed);
+}
 
 int combineBytes(uint8_t highB, uint8_t lowB) {
-    return (highB<<8)+lowB;
+  return (highB << 8) + lowB;
 }
 
 void LoadCustomGlyph(int charMemSlot, Glyph glyphName) {
@@ -58,9 +48,10 @@ void singer(int note, int duration, int vibCent, int tremHz) {
     delay(tremolo);  // using linear, lock-device delay
   }
   noTone(Buzzer_Pin);
-  digitalWrite(Buzzer_Pin,LOW);
+  digitalWrite(Buzzer_Pin, LOW);
 }
-void singer(navTEXT anyRequests7) { 
+
+void singer(navTEXT anyRequests7) {
   int N, D, V, T;
   int Melody[4]{};
   char buffer[5];
@@ -106,9 +97,9 @@ void singer(navTEXT anyRequests7) {
       T = 5;
       break;
     default:
-      N=0;
+      N = 0;
       break;
-  }  //  ENDS switch
+  }  //  END switch
   if (N > 0) singer(N, D, V, T);
 }
 
@@ -116,29 +107,29 @@ void singer(navTEXT anyRequests7) {
 class bootStrap {
 public:
   uint8_t memCell[6];
-  
-  bool operator==(const bootStrap& compare) { 
-    uint8_t i =0;
-    int sum =0;
-    while (i <6) sum += (memCell[i] - compare.memCell[i++]);
-    return (sum==0);
+
+  bool operator==(const bootStrap& compare) {
+    uint8_t i = 0;
+    int sum = 0;
+    while (i < 6) sum += (memCell[i] - compare.memCell[i++]);
+    return (sum == 0);
   }
-  void initializeEEPROM(uint settingAddr, uint eeAddress=0) {
-    if (settingAddr>eeAddress+6 && settingAddr+8 < c_mem_offset_keyblock) {
+  void initializeEEPROM(uint settingAddr, uint eeAddress = 0) {
+    if (settingAddr > eeAddress + 6 && settingAddr + 8 < c_mem_offset_keyblock) {
       memset(memCell, 0xf0, 6);
-      memCell[3]=settingAddr^0xff;
-      memCell[4]=settingAddr;
-      EEPROM.put(eeAddress,memCell);
+      memCell[3] = settingAddr ^ 0xff;
+      memCell[4] = settingAddr;
+      EEPROM.put(eeAddress, memCell);
     }
   }
-  uint locateSettings(uint eeAddress) { 
-    uint Luke=0xffff;
-    int8_t i=0;
+  uint locateSettings(uint eeAddress) {
+    uint Luke = 0xffff;
+    int8_t i = 0;
     while (eeAddress < c_mem_offset_keyblock) {
       byte MR = EEPROM.read(eeAddress);
-      if (MR==EEPROM.read(eeAddress+1)) {
-        EEPROM.get(eeAddress,memCell);
-        if ((memCell[5]==memCell[2]) && (memCell[4]^0xff == memCell[3])) {
+      if (MR == EEPROM.read(eeAddress + 1)) {
+        EEPROM.get(eeAddress, memCell);
+        if ((memCell[5] == memCell[2]) && (memCell[4] ^ 0xff == memCell[3])) {
           Luke = memCell[4];
           break;
         }
@@ -150,14 +141,16 @@ public:
 
 
 class settings {
-public: 
-  settings(uint Luke) : addrOffset_Settings{EEPROM.read(Luke)} {
+  // TODO: save SU_admin_code to rom.
+  // TODO: implement 2fa function
+  // TODO: write 2fa UI, save data, allow more than one... QR codes...
+public:  // 'structors
+  settings(uint Luke)
+    : addrOffset_Settings{ EEPROM.read(Luke) } {
     loadSettings();
   };
-  ~settings(){
-    0;
-  };
-private:  
+  ~settings(){};
+private:
   const uint addrOffset_Settings;
   struct par {
     uint8_t cs;             // 0
@@ -167,16 +160,17 @@ private:
     uint8_t backlight_LCD;  // 4
     uint8_t beepVolume;     // 5
     uint checkSum() {
-    return (0xff^(maxHooks +minCodeLength +backlight_KP +backlight_LCD +beepVolume));}
+      return (0xff ^ (maxHooks + minCodeLength + backlight_KP + backlight_LCD + beepVolume));
+    }
   };
   static par Param;
   uint32_t SU_admin_code;
 
   // static char 2fa_label[] = "SafeKeyPing"
-  //char SU_2fa_key[17];  
+  //char SU_2fa_key[17];
   //char user_name[13];
 
-public: 
+public:
   bool saveSettings() {
     Param.cs = Param.checkSum();
     EEPROM.put(addrOffset_Settings, Param);
@@ -186,18 +180,42 @@ public:
     EEPROM.get(addrOffset_Settings, Param);
     return (Param.cs == Param.checkSum());
   }
-  uint8_t getBeep() { return Param.beepVolume; }
-  uint8_t getBlKp() { return Param.backlight_KP; }
-  uint8_t getBlLcd() { return Param.backlight_LCD; }
-  uint8_t getMCL() { return Param.minCodeLength; }
-  uint8_t getMxKs() {return Param.maxHooks; }
-  bool compareAdminCode(uint32_t attempt) { return (attempt==SU_admin_code); }
-  uint8_t setBeep(uint8_t value) {Param.beepVolume= value;}
-  uint8_t setBlKp(uint8_t value) {Param.backlight_KP= value;}
-  uint8_t setBlLcd(uint8_t value) {Param.backlight_LCD= value;}
-  uint8_t setMCL(uint8_t value) {Param.minCodeLength= value;}
-  uint8_t setMxKs(uint8_t value) {Param.maxHooks= value;}
-  uint32_t setAdminCode(uint32_t newcode) {SU_admin_code= newcode;}
+  uint8_t getBeep() {
+    return Param.beepVolume;
+  }
+  uint8_t getBlKp() {
+    return Param.backlight_KP;
+  }
+  uint8_t getBlLcd() {
+    return Param.backlight_LCD;
+  }
+  uint8_t getMiCoLe() {
+    return Param.minCodeLength;
+  }
+  uint8_t getMxKs() {
+    return Param.maxHooks;
+  }
+  bool compareAdminCode(uint32_t attempt) {
+    return (attempt == SU_admin_code);
+  }
+  uint8_t setBeep(uint8_t value) {
+    Param.beepVolume = value;
+  }
+  uint8_t setBlKp(uint8_t value) {
+    Param.backlight_KP = value;
+  }
+  uint8_t setBlLcd(uint8_t value) {
+    Param.backlight_LCD = value;
+  }
+  uint8_t setMiCoLe(uint8_t value) {
+    Param.minCodeLength = value;
+  }
+  uint8_t setMxKs(uint8_t value) {
+    Param.maxHooks = value;
+  }
+  uint32_t setAdminCode(uint32_t newcode) {
+    SU_admin_code = newcode;
+  }
 protected:
   /*   
       -  16 bytes for the secret key ie: JBSWY3DPEHPK3PXP
@@ -207,6 +225,50 @@ protected:
       -  more info https://dan.hersam.com/tools/gen-qr-code.php
   */
 };  //  END class settings
+
+
+
+
+ISR(WDT_vect) {   // watchdog interrupt
+  wdt_disable();  // disable watchdog
+}  // end of WDT_vect
+void sleep_watchdog() {
+  ADCSRA = 0;
+  MCUSR = 0;
+  WDTCSR = bit(WDCE) | bit(WDE);
+  //WDTCSR = bit (WDIE) | bit (WDP2) | bit (WDP1);    // set WDIE, and 1 second delay
+  WDTCSR = bit(WDIE) | bit(WDP3) | bit(WDP0);  // set WDIE, and 8 seconds delay
+  wdt_reset();                                 // pat the dog
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  noInterrupts();  // timed sequence follows
+  sleep_enable();
+  // turn off brown-out enable in software
+  MCUCR = bit(BODS) | bit(BODSE);
+  MCUCR = bit(BODS);
+  interrupts();  // guarantees next instruction executed
+  sleep_cpu();
+  // cancel sleep as a precaution
+  sleep_disable();
+}
+void sleep_interrupt() {
+  ADCSRA = 0;
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  sleep_enable();
+  noInterrupts();
+  // will be called when pin D2 goes low
+  attachInterrupt(0, wake, FALLING);
+  EIFR = bit(INTF0);  // clear flag for interrupt 0
+  MCUCR = bit(BODS) | bit(BODSE);
+  MCUCR = bit(BODS);
+  interrupts();     // one cycle
+  sleep_cpu();      // one cycle
+  sleep_disable();  // precautionary
+}
+void wake() {
+  sleep_disable();
+  detachInterrupt(0);  // precautionary
+}
+
 
 
 
@@ -255,5 +317,3 @@ void _keyMemDump(int banks = 4) {
     }
   }
 } */
-
-

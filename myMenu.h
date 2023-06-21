@@ -31,7 +31,7 @@ private:
 	void _printPage(char* buffer16, uint8_t row, bool side=0){
 		lcd.noDisplay();
 		lcd.setCursor(side?15:0,min(1,row));
-		ArrowRight(side?5:0);
+		CrsRgt(side?5:0);
 		lcd.print(buffer16);
 	}
 public:
@@ -41,18 +41,18 @@ public:
   }
   void home2(){
 		lcd.setCursor(15,0);
-		ArrowRight(5);
+		CrsRgt(5);
   }
-	void scrollLeft(int8_t i=1) {	
+	void scrollLeft(int8_t i=1) {	//lcd.scrollDisplayLeft
 		_push(i,0x18);	//	PgRt
 	}
-	void scrollRight(int8_t i=1) {
+	void scrollRight(int8_t i=1) {  //lcd.scrollDisplayRight
 		_push(i,0x1c);	//	PgLt
 	}
-	void ArrowLeft(int8_t i=1) {
+	void CrsLft(int8_t i=1) {
 		_push(i,0x10);	//	[<-]
 	}
-	void ArrowRight(int8_t i=1){
+	void CrsRgt(int8_t i=1){
 		_push(i,0x14);	//	[->]
 	}
 	void printLHS(char* buffer16, uint8_t row) {
@@ -61,11 +61,16 @@ public:
 	void printRHS(char* buffer16, uint8_t row) {
 			_printPage(buffer16, row, true);			
 	}
-	void fxDspl_CursPushLeft(){	_push(1,0x04);	}	//	These
-	void fxDspl_CursPushRght(){	_push(1,0x06);	}	//	are 4
-	void fxCurs_DsplDragLeft(){	_push(1,0x07);	}	//	typing
-	void fxCurs_DsplDragRght(){	_push(1,0x05);	}	//	modes.
+	void fxDspl_CursPushLeft(){	_push(1,0x04);	}	// These  lcd.rightToLeft
+	void fxDspl_CursPushRght(){	_push(1,0x06);	}	// are 4  lcd.leftToRight
+	void fxCurs_DsplDragRght(){	_push(1,0x05);	}	// typing lcd. ~ ? ~
+	void fxCurs_DsplDragLeft(){	_push(1,0x07);	} // modes. lcd.autoscroll
+  // lcd.autoscroll ('rtjstfy') - except it's not, it only drags the display)
+  // to 'print' right-jstfy, cursor start at 15, CursPushLeft, print characters
+  // in reverse order. But this is just a R-L hack.  They all hacks. 
+        //lcd.noAutoscroll might be one of these
 };	//	END class lcdADF
+
 
 class nibble {
 public:
@@ -81,7 +86,7 @@ public:
 };  //  END class nibble
 
 
-class thedynamicfeedbackthing : public nibble, public converter, public lcdADF { 
+class thedynamicfeedbackthing : public nibble, public code_converter, public lcdADF { 
 public: // 'structors 
   thedynamicfeedbackthing(uint8_t Size, uint8_t col, uint8_t row) 
     : _Length{(uint8_t)(Size + 1)}, _dynBuffer{new char[_Length]}, _CursorCoPos{combineNib(row,col)}
@@ -141,7 +146,7 @@ public:
   void burst(){ 
       singer(Cancelled);
       clrFeedback(_CoolEffectsBra);
-      //lcdADF::ArrowLeft();
+      //lcdADF::CrsLft();
 
   }
   void clrFeedback(bool snazzy=0) {
@@ -173,68 +178,60 @@ public:
     return atoi(_dynBuffer);
   }
   uint32_t Obtain_as_someHxCode(){
-    return (converter::codeToUint32_t(_dynBuffer, _count));
+    return (code_converter::codeToUint32_t(_dynBuffer, _count));
   }
 };  //  END class the dynamicfeedbackthing
 
 
-class ppp : public lcdADF {
+class ppp : public lcdADF {   //   working fine
 private:
   void PPws(int8_t cnt, char WS=' ') {
     while (cnt-- > 0) (lcd.print(WS));
   }
 public:
-  void progProgPrint(const char* str, int8_t padCntr)
+  void progProgPrint(const char* str, int8_t padders, justification J)
   {
-    PPws(padCntr);
+    PPws(padders);
     char C;
-    padCntr= 16 - padCntr; 
+    padders= 16 - max(0,padders); 
     while (C = pgm_read_byte(str++)) {
-      padCntr-= lcd.print(C);
-      if(padCntr<=0) break;
-    }
-    if (padCntr>0) PPws(padCntr);
+      padders-= lcd.print(C);
+      if(padders<=0) break; //defence
+    } // 'none' will not ws overwrite after label
+    if (padders>0 && J!=none) PPws(padders);
   }
 };  //  END class ppp
 
 
-class labelStrFetcher : public nibble, public ppp {
+class labelStrFetcher : public nibble, public ppp { 
 public:
-  void Display(navTEXT requestLabel, bool RHS) {
-      if (RHS) lcdADF::home2();
-      else lcd.home();
-      Display(requestLabel, none);
-    }
-  void Display(navTEXT requestLabel) 
-  {
-    Display(requestLabel, none);  
+  void Display(navTEXT requestLabel, bool RHS=false, justification J=none) {
+    if (RHS) lcdADF::home2();
+    else lcd.home();
+    const char* str = _getStrPtr(requestLabel);
+    int8_t padders = _getPrePadding(requestLabel, J);
+    ppp::progProgPrint(str, padders, J);  // <-- actual lcd progressive PROGMEM print command
   }
-  void Display(navTEXT requestLabel, justification J)
-  {
-    const char* str = getStrPtr(requestLabel);
-    int8_t padCntr = getPrePadding(requestLabel,J);
-    ppp::progProgPrint(str, padCntr); // <-- actual lcd progressive PROGMEM print command
+  uint8_t getThatExtraValue(navTEXT requestLabel) {
+    return (uint8_t)pgm_read_byte(&mLabelGroup[highNib((byte)requestLabel)][lowNib((byte)requestLabel)].value);
   }
 private:
-  const char* getStrPtr(navTEXT requestLabel) {
+  const char* _getStrPtr(navTEXT requestLabel) {
     return &(mLabelGroup[highNib((byte)requestLabel)][lowNib((byte)requestLabel)].label[0]);
   }
-  int8_t getPrePadding (navTEXT requestLabel, justification override = none) {
-    justification J = autoJ(requestLabel);
-    if (override!=none) J = override;
-    int8_t whiteSpace = min(16,max(0,16-getLennyP(requestLabel)));
-    if (J==right) return whiteSpace;
-    else if (J==center) return whiteSpace/2;
+  int8_t _getPrePadding(navTEXT requestLabel, justification &J) {
+    if (J == none) J = _autoJ(requestLabel);
+    int8_t whiteSpace = min(16, max(0, 16 - _getLennyP(requestLabel)));
+    if (J == right) return whiteSpace;
+    else if (J == center) return whiteSpace / 2;
     else return 0;
   }
-  uint8_t getLennyP(navTEXT requestLabel) 
-  {  
-	  return (uint8_t)strlen_P(mLabelGroup[highNib((byte)requestLabel)] [lowNib((byte)requestLabel)].label);
+  uint8_t _getLennyP(navTEXT requestLabel) {
+    return (uint8_t)strlen_P(mLabelGroup[highNib((byte)requestLabel)] [lowNib((byte)requestLabel)].label);
   }
-  justification autoJ(navTEXT requestLabel) 
-  {
-    justification J = (justification)highNib(mLabelGroup[highNib((byte)requestLabel)] [lowNib((byte)requestLabel)].value);
-    if (J==left||J==right||J==center) return J;
+  justification _autoJ(navTEXT requestLabel) {
+    justification J = (justification)((uint8_t)(getThatExtraValue(requestLabel))>>6);
+    if (J == left || J == right || J == center) return J;
     return justification::none;
   }
 };  //  END class labelStrFetcher
@@ -242,38 +239,38 @@ private:
 
 class menuElement : public labelStrFetcher {
 public:  // 'structors
-  menuElement(navTEXT Label, void (*action)())
-    : Label{ Label }, action{ action } {
+  menuElement(navTEXT myLabel, void (*action)())
+    : myLabel{ myLabel }, action{ action } {
     Banner3();
   };
-  menuElement(navTEXT Label)
-    : Label{ Label } {
-    Banner3();
+  menuElement(navTEXT myLabel)
+    : myLabel{ myLabel } {
+      _lookForMyActionPtr(myLabel);
+      Banner3();
   };
   ~menuElement() {
     action = nullptr;
   };
 
 private:
-  navTEXT Label;
+  navTEXT myLabel;
   void (*action)(); // function-ptr
+  void _lookForMyActionPtr(navTEXT l) {
+    action = doAdminActions[labelStrFetcher::getThatExtraValue(l)&0x3f];
+  }
 
 public:
     void Banner3() {
-      // set cursor NOW before printing the menu label.
-      lcd.home();
-      Display(Label);
+      labelStrFetcher::Display(myLabel, false);
     }
-    void Banner4() { Display(Label, true); }
-
     void addAction(void (*action)()) {   //  TODO - what is my purpose?
     }
     bool executeAction() {
       if (action == nullptr) {
-        dln(Label, ": has no action");
+        Serial.print(myLabel,HEX);
+        Serial.print(": has no action!");
         return false;
       }
-      dln("action from ", Label);
       action();
       return true;
     }
@@ -282,51 +279,69 @@ public:
 
 class naviFramework : public nibble {
 public:  // 'structors
-  naviFramework(navTEXT label) {
-    generateNewMenuItem(label); // <-- starting point
+  naviFramework(navTEXT label) : myLabel{label} {
+    _generateNewMenuItem(label); // <-- starting point
   };
   ~naviFramework() {
     delete Item;
     Item = nullptr;
   };
 private:
-  navTEXT Label;
-  navTEXT _prevLabel;
-  int8_t idx;       // 0 idx
-  int8_t Tier;      // 1 indexed, Tier 0 is kiosk and misc labels
+  navTEXT myLabel;
+  navTEXT _returnMenu;
+  //int8_t idx;       // 0 idx
+  //int8_t Tier;      // 1 indexed, Tier 0 is kiosk and misc labels
   bool unlimitedScroll = false;   //    TODO : get from settings
   menuElement* Item {nullptr};
 
-  void generateNewMenuItem(navTEXT new_label) {
-    Label = new_label;
-    idx = lowNib(Label);
-    Tier = highNib(Label);
+  int8_t _idx()  { return lowNib(myLabel);  }
+  int8_t _tier() { return highNib(myLabel); }
+  
+  void _generateNewMenuItem(navTEXT new_label) {
+    myLabel = new_label;
+    //idx = lowNib(myLabel);
+    //Tier = highNib(myLabel);
     delete Item;
-    Item = new menuElement(Label);
-    banner();
+    Item = new menuElement(myLabel);
+    //banner();
   }
 
 public:
   int8_t switchTier(navTEXT label){
-    _prevLabel = Label;
-    generateNewMenuItem(label);
+    _returnMenu = myLabel;
+    _generateNewMenuItem(label);
   }
 
   int8_t returnTier(){
-    int8_t parent = T[Tier][0];
-    if (highNib(_prevLabel)==parent) switchTier(_prevLabel);
-    else switchTier((navTEXT)(T[parent][1]));
+    if (highNib((uint8_t)(myLabel))==highNib((uint8_t)_returnMenu)) _returnMenu = L[highNib(myLabel)][0];
+    else myLabel = _returnMenu;
+    _generateNewMenuItem(_returnMenu);
   }
 
-  void browse(nav Dir) {
-    idx += Dir;
-    if (unlimitedScroll) {
-      idx = (idx + menuMapSizes[Tier]) % (menuMapSizes[Tier]);
+  bool browse(nav Dir) {
+    int8_t idx = _idx();
+    int8_t tier = _tier();
+    dln(Dir, idx, tier);
+    if (Dir==Prev||Dir==Next){
+      idx += Dir;
+      if (unlimitedScroll) {
+        idx = (idx + menuMapSizes[tier]) % (menuMapSizes[tier]);
       }else {
         if (idx<0) idx = 0;
-        if (idx>=menuMapSizes[Tier]) idx = menuMapSizes[Tier] -1;
+        if (idx>=menuMapSizes[tier]) idx = menuMapSizes[tier] -1;
       }
-    generateNewMenuItem((navTEXT)(T[Tier][idx+1]));
+      _generateNewMenuItem((L[tier][idx]));
+      return false;
+    }
+    else if (Dir==Selct) {
+      trigger();
+      return true;
+    }
+    else if (Dir==Esc) {
+      if (_returnMenu!=myLabel) returnTier();
+      else if (idx!=0) _generateNewMenuItem((L[tier][0]));
+    }
+      return false;
   }  
   void banner() { //  simply an abstracted request to print the current item label
     Item->Banner3();
@@ -335,15 +350,28 @@ public:
   }  
   void addItemAct(void (*action)()) {
     Item->addAction(*action); // function-ptr
-   } 
+  } 
+  void trigger(){
+    Item->executeAction();
+  }
   navTEXT gateLabel() {
-    return Label;
+    return myLabel;
   }
 };     // END class naviFramework
 
+class special {
+public:
+  special () {
+    lcd.blink();
+    delay(500);
+    lcd.display();
+  }
+  bool main(uint32_t sinisterCode) {
+    //return Settings.compareAdminCode(sinisterCode);
+    return true;
 
-
-
+  }
+}; //  END class special
 
 
 class kioskmenu : public menuElement, public thedynamicfeedbackthing {
@@ -352,109 +380,114 @@ public: // 'structors
     menuElement{EnterCode}, _minCodeLength{minCodeLength},
     thedynamicfeedbackthing{inputBuffSz, cursCol, cursRow}
     {
-      reset();
+      _reset();
     };
   ~kioskmenu(){
-    disposal();
+    _disposal();
   };
 
 private:
   uint8_t _minCodeLength;
   orphanRec* Orphan;
   tally* Tally;
+  special* Feature{nullptr};
 
-  void disposal(){
+  void _disposal(bool Reset=false){
     lcd.noDisplay();
     delete Orphan;
     Orphan = nullptr;
     delete Tally;
     Tally = nullptr;
+    delete Feature;
+    Feature = nullptr;
+    if(Reset) _reset();
   }
 
-  void reset() {
+  void _reset() {
     menuElement::Banner3();
     thedynamicfeedbackthing::clrFeedback();
     Tally = new tally;
+    delay(150);
     lcd.display();
+    lcd.noBlink();
   }
 
-  void probablyWrongAnyway(uint8_t Len) {
+  bool _probablyWrongAnyway(uint8_t Len) {
+    uint8_t matchingAddress;
     if (Len >=_minCodeLength) {
       //if (Tally==nullptr) Tally = new tally;
-      char digits[Len+1];
-      Obtain(digits);
-      Orphan = new orphanRec(digits,Len);
-      clrFeedback();
-      uint8_t matchingAddress = Tally->Adoption(Orphan);
-      if (matchingAddress) Fanfare(75);
-      disposal();
+      //char digits[Len+1];
+      //Obtain(digits);
+      //Orphan = new orphanRec(digits,Len);
+      if (_specialK(nav::Selct, thedynamicfeedbackthing::Obtain_as_someHxCode())) {
+        Orphan = new orphanRec(thedynamicfeedbackthing::Obtain_as_someHxCode());
+        matchingAddress = Tally->Adoption(Orphan);
+      }
+      thedynamicfeedbackthing::clrFeedback();
+      if (matchingAddress) _Fanfare(75);
+      _disposal(true);
     }
   }
 
-  void Fanfare(int Dur) {
+  void _Fanfare(int Dur) {
     menuElement Result(Success);
     singer(Success);
-    delay(1500);
+    Idle.setPause(2000);
   }
 
+  bool _specialK(nav Dir, uint32_t sinister) {
+    if (Dir==LhAS && !Feature && sinister==0) Feature = new special;
+    if (Dir==Esc && sinister==0) _disposal(true);
+    if (Dir==Selct) return (Feature->main(sinister));
+  }
+  
 public:
-  void main(char kP) {
-    if (kP=='!' || Tally==nullptr) reset();
+  bool main(char kP) {
+    if (kP=='!' || Tally==nullptr) _reset();
+    if (kP=='x') _specialK(nav::LhAS, getLen());
     if (isDigit(kP)) add(kP);
-    else if (kP=='*') clrFeedback(); 
-    else if (kP=='#') probablyWrongAnyway(getLen());
+    else if (kP=='*') thedynamicfeedbackthing::clrFeedback(); 
+    else if (kP=='#') return _probablyWrongAnyway(getLen());
   }
 };  //  END class Kioskmenu
 
 
-
 class adminmenu : public naviFramework {
-public: //  'structors 
-  adminmenu(int foo) : naviFramework{SetCode} {
-    naviFramework::banner(); 
+public: //  'structors  
+  adminmenu() : naviFramework{SetCode} {
     lcd.display();
   };
-  ~adminmenu() { _disposal(); };
+  ~adminmenu() {
+     _disposal();
+  };
 private:
   labelStrFetcher* additionalText = nullptr;
   hookRec* myRec = nullptr;
-  thedynamicfeedbackthing* userEntry;
   bool jesusHasTheWheel = false;
 
   void _disposal(){
     lcd.noDisplay();
     delete additionalText;
     delete myRec;
-    delete userEntry;
     additionalText = nullptr;
     myRec = nullptr;
-    userEntry = nullptr;
-  }
+   }
 
 public:
-  void main(char kP){
-    if (!jesusHasTheWheel) {
-      if (navD==Prev||navD==Next) naviFramework::browse(navD);
-      if (navD==Selct)  jesusHasTheWheel=true;
-    }
-    //if (navD==Esc) jesusHasTheWheel=false;
-    if (jesusHasTheWheel) {
-      if (navD==Esc) backupOneLevel();
-      else if (navD==Selct) {
-        if (naviFramework::gateLabel()==DevSetting) drillDown(SetMaxKeys);
-        else if (naviFramework::gateLabel()==SuSetting) drillDown(mCodeLen);
-        else jesusHasTheWheel=false;
-      }
+  void main(char kP, nav navD){
+    if (jesusHasTheWheel==false) navigate(navD);
+    else {  dln(":(");  
     }
   }
 
-  void drillDown(navTEXT l) {
-    jesusHasTheWheel=false;
-    naviFramework::switchTier(l);
+  void navigate(nav navD) {
+    if (navD==Clr) navD=Esc;
+    if (naviFramework::browse(navD)) 0;//jesusHasTheWheel=true;
+    else if (navD==Esc) naviFramework::returnTier();
   }
-  void backupOneLevel() {
+  void drillDown(navTEXT nextLevel){
     jesusHasTheWheel=false;
-    naviFramework::returnTier();
+    switchTier(nextLevel);
   }
 
 };    //  END class adminmenu
@@ -462,19 +495,42 @@ public:
 
 
 
-
-
 class submenu : public menuElement {
 public: // 'structors  
-  submenu(navTEXT Label , uint8_t minCodeLength, uint8_t inputBuffSz) 
-    : menuElement{Label}, _minCodeLength{minCodeLength}
+  submenu(navTEXT myLabel , uint8_t minCodeLength, uint8_t inputBuffSz) 
+    : menuElement{myLabel}, _minCodeLength{minCodeLength}
     { 
-      reset();
+      _reset();
     };
   ~submenu(){
-    disposal();
+    _disposal();
   };
+/*
+  "Which Hook?" : * cancel back to menu
+  (user entry)  : * cls entry, back to menu
+  [pull record, check status, display status summary]
+  "Enter Code:" : * displays "Cancelled", paws, back to menu.
+  (user entry)  : * cls entry, as prev.
+  [set record, DB check, display warnings]
+  -done-
+ */
+/*
+  SetCode: hook? 2 code? done
+  ShowCode: hook/All? 2 done
+                "<->" nav Esc done
+  InstallKey: hook? 2 done
+  ClearCode: hook/All? 2 done
+                "sure?" conf done
+  DropKey: hook/all?  2 done
+                "ready?" conf done
 
+  SetMaxKeys: UI Selct/Esc done
+  KP-BL: UI S/E done
+  LCD-BL:
+  Beep: UI S/E done
+  SU: SUcode? setPriv subMenu done
+
+ */
 private: 
   uint8_t _minCodeLength;
   uint8_t settings_maxKs;
@@ -483,7 +539,7 @@ private:
   tally* Tally;
   labelStrFetcher* Label2ndy;
 
-  void disposal(){
+  void _disposal(){
     lcd.noDisplay();
     delete keyRecord;
     delete fbKeypad;
@@ -495,7 +551,7 @@ private:
     Label2ndy = nullptr;
   }
 
-  void reset() {
+  void _reset() {
     menuElement::Banner3();
     fbKeypad = new thedynamicfeedbackthing(2, 12, 1);
     Tally = new tally;
@@ -504,7 +560,7 @@ private:
 
 public: 
   void main(char kP) {
-    if (kP=='!') reset();
+    if (kP=='!') _reset();
     if (isDigit(kP)) fbKeypad->add(kP);
     else if (kP=='*') fbKeypad->clrFeedback(); 
     else if (kP=='#') fbKeypad->Obtain();
@@ -514,7 +570,7 @@ public:
     if (fbKeypad = nullptr) fbKeypad = new thedynamicfeedbackthing(2, 12, 1);
     uint8_t x = (uint8_t)fbKeypad->Obtain();
     uint8_t Len = fbKeypad->getLen();
-    if (kP=='!') reset();
+    if (kP=='!') _reset();
     if (isDigit(kP)) fbKeypad->add(kP);
     else if (kP=='*') fbKeypad->clrFeedback(); 
     else if (kP=='#' && x > 0) {
@@ -528,7 +584,7 @@ public:
   void menuAction_enterCode(char kP) {
     if (fbKeypad = nullptr) fbKeypad = new thedynamicfeedbackthing(9,4,1);
     uint8_t Len = fbKeypad->getLen();
-    if (kP=='!') reset();
+    if (kP=='!') _reset();
     if (isDigit(kP)) fbKeypad->add(kP);
     else if (kP=='*') fbKeypad->clrFeedback(); 
     else if (kP=='#' && Len > _minCodeLength) {
@@ -545,5 +601,6 @@ public:
   }
 
 };  //  END class submenu 
+
 
 #endif   // naviFramework_H_

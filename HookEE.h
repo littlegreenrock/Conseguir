@@ -37,9 +37,23 @@ public:
 
 };  //  END class noTryNoCatch
 
+class code_converter {
+  public:
+    uint32_t codeToUint32_t(const char* Code, const byte Len) {
+      uint32_t someHxCode = (atol(Code) << 4) + (Len & 0x0f);
+      return someHxCode;
+    }
+    uint8_t codeToBuffer(uint32_t someHxCode, char* destBuffer10) {
+      // stores code as digits string in destBuffer10. returns str Length.
+      char dumb[7];
+      uint8_t Len = someHxCode&0x0f;
+      sprintf(dumb, "%%0%dlu", Len);
+      sprintf(destBuffer10, dumb, (someHxCode >> 4));
+      return Len;
+    } 
+};  //  END class code_converter
 
-
-class converter {
+class addr_converter { 
   // Just converts, does not check or validate.
     // A : Addr_Hx - solenoid location of hook.
     // K : keyPos - linear human reference to rl hook.
@@ -60,30 +74,29 @@ class converter {
     uint8_t AtoK(uint8_t Addr_Hx) {
       return (Addr_Hx >> 4) * c_noKeyPerBank + (Addr_Hx&0x0f) +1;
     }
-    uint32_t codeToUint32_t(const char* Code, const byte Len) {
-      uint32_t someHxCode = (atol(Code) << 4) + (Len & 0x0f);
-      return someHxCode;
-    }
-    uint8_t codeToBuffer(uint32_t someHxCode, char* destBuffer10) {
-      // stores code as digits string in destBuffer10. returns str Length.
-      char dumb[7];
-      uint8_t Len = someHxCode&0x0f;
-      sprintf(dumb, "%%0%dlu", Len);
-      sprintf(destBuffer10, dumb, (someHxCode >> 4));
-      return Len;
-    } 
+    // uint32_t codeToUint32_t(const char* Code, const byte Len) {
+    //   uint32_t someHxCode = (atol(Code) << 4) + (Len & 0x0f);
+    //   return someHxCode;
+    // }
+    // uint8_t codeToBuffer(uint32_t someHxCode, char* destBuffer10) {
+    //   // stores code as digits string in destBuffer10. returns str Length.
+    //   char dumb[7];
+    //   uint8_t Len = someHxCode&0x0f;
+    //   sprintf(dumb, "%%0%dlu", Len);
+    //   sprintf(destBuffer10, dumb, (someHxCode >> 4));
+    //   return Len;
+    // } 
     
-};  //  END class converter
+};  //  END class addr_converter
 
 
 class basicRomReadWrite {
-public: 
-  uint8_t readAddr(int E) 
-  { // returns Addr_Hx value (A) at rom location (E)
-    return EEPROM.read(E +0);
+public:
+  uint8_t readAddr(int E) {
+    // returns Addr_Hx value (A) at rom location (E)
+    return EEPROM.read(E + 0);
   }
-  uint32_t readCode(uint E) 
-  {
+  uint32_t readCode(uint E) {
     uint32_t someHxCode;
     EEPROM.get(E + 1, someHxCode);
     return someHxCode;
@@ -92,10 +105,10 @@ public:
     return EEPROM.read(E + 5);
   }
   void writeCode(uint E, uint32_t someHxCode) {
-    EEPROM.put(E +1, someHxCode);
+    EEPROM.put(E + 1, someHxCode);
   }
   void writeAvail(uint E, uint8_t A) {
-    EEPROM.update(E +5, A);
+    EEPROM.update(E + 5, A);
   }
 };  //    END class basicRomReadWrite
 
@@ -115,7 +128,7 @@ public:
   };
   //INST -> RDMD -> CLRD; Tog:ORPH, VIP, FLK, BLCK, foo_spare
   // |ZERO won't break anything. |foo will go unnoticed. can still set an invalid state without care or validation.
-public:
+protected:
   uint8_t _addBit(uint8_t &Avail, AC name) {
     return (Avail|=name); 
   }
@@ -144,56 +157,68 @@ public:
 }; //  END class bitFlagInterface
 
 
-class recordLock : public  basicRomReadWrite {
-public: // 'structors
-	recordLock(uint E) : _eeAddr{E}, _ownership{lockRecord(E)}	{};
-	~recordLock(){
-		closeRecord(); 
-	};
+class recordLock : public basicRomReadWrite, protected bitFlagInterface {
+public:  // 'structors
+  recordLock(uint E)
+    : _eeAddr{ E }, _ownership{ lockRecord(E) } {};
+  ~recordLock() {
+    closeRecord();
+  };
 private:
-	const uint _eeAddr;
-	const bool _ownership;  // == write permission
+  const uint _eeAddr;
+  const bool _ownership;  // == write permission
 
-	bool lockRecord(uint E) 
-  {
-		uint8_t Avail = basicRomReadWrite::readAvail(E);
-		if (bitRead(Avail, 5)==1) return false; // rec was already locked
-		bitSet(Avail, 5);
-		basicRomReadWrite::writeAvail(_eeAddr, Avail);
-		return true;	// rec locked, I have control. 
-	}
-  void closeRecord() 
-  {
-		if (_ownership) {
+  bool lockRecord(uint E) {
+    uint8_t Avail = basicRomReadWrite::readAvail(E);
+    if (bitFlagInterface::isBit(Avail,RLK)) return false;   // rec was already locked
+    //if (bitRead(Avail, 5) == 1) return false;  // rec was already locked
+    bitFlagInterface::_addBit(Avail, RLK);
+    basicRomReadWrite::writeAvail(_eeAddr, Avail);
+    return true;  // rec locked, I have control.
+  }
+  void closeRecord() {
+    if (_ownership) {
       uint8_t A = basicRomReadWrite::readAvail(_eeAddr);
-      bitClear(A, 5);
+      bitFlagInterface::_clearBit(A, RLK);
       basicRomReadWrite::writeAvail(_eeAddr, A);
     }
   }
-    
+
 public:
-	void saveAndCloseRecord(uint8_t Avail, uint32_t someHxCode) 
-  { 
-		if (_ownership) {
+  void saveAndCloseRecord(uint8_t Avail, uint32_t someHxCode) {
+    if (_ownership) {
       // uses update, so if the data is the same, no rom write occurs
       basicRomReadWrite::writeCode(_eeAddr, someHxCode);
       basicRomReadWrite::writeAvail(_eeAddr, Avail);
     }
-	}
-	void changeAvailStatus(uint8_t Avail) 
-  { 
-	  if (_ownership) basicRomReadWrite::writeAvail(_eeAddr, Avail);
-	}
+  }
+  void changeAvailStatus(uint8_t Avail) {
+    if (_ownership) basicRomReadWrite::writeAvail(_eeAddr, Avail);
+  }
 };  //  END class recordLock
 
+class recordStruct {
+public:
+    uint8_t Addr_Hx {};
+    uint32_t Code;  // const for orphan, how???
+    uint8_t Avail;  // = (uint8_t)AC::ORPH;
 
-class orphanRec : public basicRomReadWrite, public converter , public bitFlagInterface{
+
+};    //  END class recordStruct
+
+class orphanRec : public recordStruct, public basicRomReadWrite, public addr_converter, public bitFlagInterface {
 public: //  'structors
     // Orphaned records always begin with a code. 
-  orphanRec(const char* digits, const byte Len) : Code{codeToUint32_t(digits, Len)} {};
-  orphanRec(uint32_t someHxCode) : Code{someHxCode} {};
+  // orphanRec(const char* digits, const byte Len)  {
+  //   Avail = _addBit(Avail, ORPH);
+  //   Code = codeToUint32_t(digits, Len);
+  // };
+  orphanRec(uint32_t someHxCode)  {
+    Avail = _addBit(Avail, ORPH);
+    Code= someHxCode;
+  };
   ~orphanRec() {
-    if (Code) dln("\tOrphan --> Soylent Green");
+    if (!Addr_Hx) dln("\tOrphan --> Soylent Green");
   }
 
 private:
@@ -202,49 +227,38 @@ private:
   }
 
 public:
-    uint8_t Addr_Hx {};
-    const uint32_t Code;  
-    uint8_t Avail = (uint8_t)AC::ORPH;
+    // uint8_t Addr_Hx {};
+    // const uint32_t Code;  
+    // uint8_t Avail = (uint8_t)AC::ORPH;
 
   uint8_t areYouMyMummy7(uint8_t keyPos) {
-    uint32_t someHxCode = readCode(KtoE(keyPos)); 
-    uint8_t A = readAvail(KtoE(keyPos));
-    if (Code == someHxCode && canDrop(A)) {
-      Addr_Hx = readAddr(KtoE(keyPos));
-      Avail=A;
-
+    // correct
+    uint32_t mummyHxCode = readCode(KtoE(keyPos)); 
+    uint8_t mummyAvail = readAvail(KtoE(keyPos));
+    if (this->Code == mummyHxCode && canDrop(mummyAvail)) {
+      this->Addr_Hx = readAddr(KtoE(keyPos));
+      this->Avail = mummyAvail;
       return Addr_Hx;
     }else return 0;
   }
   bool dropKey(uint8_t solenoid) {
     if (solenoid == this->Addr_Hx) {
-      bitSet(this->Avail, 1);
-			bitClear(this->Avail, 2);
+      bitFlagInterface::_addBit(this->Avail, RDMD);
+			bitFlagInterface::_clearBit(this->Avail, INST);
       _commitRecord();
     }
   }
   uint8_t getAvail() {
     return this->Avail;
   }
-  uint8_t browseKeyListForMatch(uint32_t knownCode, uint8_t* listofKeyPos, uint8_t listLen)
-  {
-    if (knownCode<5 || listLen==0) return 0;
-    uint8_t count=0;
-    for (int i = 0; i<listLen; i++){
-      uint32_t someHxCode = readCode(KtoE(listofKeyPos[i]));
-      if (knownCode!=someHxCode) listofKeyPos[i]=0;
-      else count++;
-    }
-    return count;
-  }   
 };  //  END class orphanRec
 
 
 
-class hookRec : public recordLock, public bitFlagInterface, public converter {
+class hookRec : public recordStruct, public recordLock, public addr_converter, public code_converter {
   public: //  'structors
     //  hookRec always begins referenced to a rom record, and locked.
-    hookRec(uint8_t keyPos) : recordLock{KtoE(keyPos)} {
+    hookRec(uint8_t keyPos) : recordLock{KtoE(keyPos)} { 
       // acquire record from eeprom
       if (keyPos>0 && keyPos<=c_maxHWDepdntKeys) {
         Addr_Hx = KtoA(keyPos);
@@ -253,13 +267,11 @@ class hookRec : public recordLock, public bitFlagInterface, public converter {
       }
       else delete this;   // TODO fail record assignment.
     }
-    ~hookRec() {
-      
-    }
-  protected:
-    uint8_t Addr_Hx;
-    uint32_t Code;
-    uint8_t Avail;
+    ~hookRec() { }
+  // protected:
+    // uint8_t Addr_Hx;
+    // uint32_t Code;
+    // uint8_t Avail;
   public:
     void setCode(const char* digits, const byte Len){
       setCode(codeToUint32_t(digits, Len));
@@ -276,22 +288,22 @@ class hookRec : public recordLock, public bitFlagInterface, public converter {
     }
 
     bool install() {
-      _addBit(Avail, INST);
-      _clearBit(Avail, RDMD);
-      _clearBit(Avail, CLRD);
+      bitFlagInterface::_addBit(Avail, INST);
+      bitFlagInterface::_clearBit(Avail, RDMD);
+      bitFlagInterface::_clearBit(Avail, CLRD);
     }
     bool makeVIP(){
-      _addBit(Avail, VIP);
+      bitFlagInterface::_addBit(Avail, VIP);
     }
     bool flagAsOOS(){
-      _addBit(Avail,BLCK);
+      bitFlagInterface::_addBit(Avail,BLCK);
     }
 
 };  //  END class hookRec
 
 
 
-class tally : private basicRomReadWrite, private converter {
+class tally : private basicRomReadWrite, private addr_converter, public code_converter {
   private:
     uint8_t Size{};
     uint8_t* theListOfKeys;
@@ -300,7 +312,7 @@ class tally : private basicRomReadWrite, private converter {
     void _HeadCount() {
       uint8_t A, idx=0;
       for (int iKeyPos = 1; iKeyPos <= c_maxHWDepdntKeys; iKeyPos++) {
-        A = readAvail(KtoE(iKeyPos));
+        A = basicRomReadWrite::readAvail(KtoE(iKeyPos));
         if (A&Focus) idx++;
         Size = idx;
       }
@@ -310,7 +322,7 @@ class tally : private basicRomReadWrite, private converter {
       theListOfKeys = new uint8_t[size]; 
       uint8_t A, idx=0;
       for (int iKeyPos = 1; iKeyPos <= c_maxHWDepdntKeys; iKeyPos++) {
-        A = readAvail(KtoE(iKeyPos));
+        A = basicRomReadWrite::readAvail(KtoE(iKeyPos));
         if (A&Focus) theListOfKeys[idx++]=iKeyPos;
       }
     }
@@ -325,33 +337,43 @@ class tally : private basicRomReadWrite, private converter {
     ~tally() { 
       delete[] theListOfKeys;
       theListOfKeys = nullptr;      
-      //dln("\t--> destruct Tally");
     }
-    uint8_t giveMe(char* buffer16, uint8_t item) {
+    uint8_t giveMe(char* buffer16, uint8_t listItem) {
       uint8_t keyPos{};
-      if (item>0&&item<=Size){
-        keyPos = theListOfKeys[item-1];
-        hookRec temp(keyPos);
+      if (listItem>0&&listItem<=Size){
+        keyPos = theListOfKeys[listItem-1];
+        hookRec tempRec(keyPos);
         char sub;
-        //if (subFocus>ZERO && temp.is(subFocus)) sub='*';
+        //if (subFocus>ZERO && tempRec.is(subFocus)) sub='*';
         snprintf(buffer16, 17, "%2d: %-8s %-3c", keyPos, readCode(KtoE(keyPos)),sub);
       }
       return keyPos;
     }
-    uint8_t giveMe(uint8_t entryNum) {
-      if (entryNum>0 && entryNum<=Size) return theListOfKeys[entryNum-1];
+    uint8_t giveMe(uint8_t listItem) {
+      if (listItem>0 && listItem<=Size) return theListOfKeys[listItem-1];
       else return 0;
     }
     uint8_t Adoption(orphanRec* Lost) {
-      uint8_t resultaddress;
+      uint8_t resultaddress=0;
       for (int i = 0; i<Size; i++) {
-        resultaddress = Lost->areYouMyMummy7(theListOfKeys[i]);
+        resultaddress = max(0,Lost->areYouMyMummy7(theListOfKeys[i]));
       }
       return resultaddress;
     }
     uint8_t getListSize() {
       return Size;
     }
+    uint8_t browseKeyListForMatch(uint32_t knownCode, uint8_t* listofKeyPos, uint8_t listLen) {
+      // finds code from given list matching mine, amends list, counts matches, returns count.
+      if (knownCode<5 || listLen==0) return 0;
+      uint8_t count=0;
+      for (int i = 0; i<listLen; i++){
+        uint32_t someHxCode = readCode(KtoE(listofKeyPos[i]));
+        if (knownCode!=someHxCode) listofKeyPos[i]=0;
+        else count++;
+      }
+      return count;
+  }   
 };
 
 

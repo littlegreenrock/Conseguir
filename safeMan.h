@@ -12,12 +12,12 @@
 #pragma once
 
 #include "Arduino.h"
-extern const uint8_t Door_Pin;
-extern Keypad KP;
+//extern const uint8_t Door_Pin;
+//extern Keypad KP;
 
-void dln() ;
-template<typename TT, typename... Ttypes>
-void dln(TT first, Ttypes... Other) ;
+// void dln() ;
+// template<typename TT, typename... Ttypes>
+// void dln(TT first, Ttypes... Other) ;
 
 
 enum circumState { 
@@ -151,15 +151,16 @@ private:
 	}
 
 public:
-	circumState checkDoor() {
+	int8_t checkDoor(bool kpactivity) {
 		_checkDoorstateTogglingConditions(getState()); // it's correct, leave it
 		idleCheckList(_blinkie());	// this too
-		return _nowMode;
+    //KP.getKeys();
+		return (checkIfStillPaused());
 	}
 
 	bool getMode(circumState guess) { return (guess == _nowMode); }
 	
-	circumState getMode() {	return checkDoor(); }
+	circumState getMode() {	return _nowMode; }
 	
 	void setMode(circumState mode) { 
 		if (_nowMode != mode) {
@@ -169,19 +170,21 @@ public:
 	
 	void act() { 
 		_millicent = millis();
-		setPause();	// cancel pause
+		clrPause();	// cancel pause
 	}
-	void setPause() {	_pawscent = 0;	}
+	void clrPause() {	_pawscent = 0;	}
 
 	void setPause(int ms) { _pawscent = ms + millis(); }
+
+	int8_t checkIfStillPaused() {
+		if (_pawscent!=0 && _pawscent<millis()) {
+      clrPause();
+      return -1;
+    }
+		else if (_pawscent==0) return 0;
+    else return 1;    
+  }
 	
-	bool checkForPausedRanout() {
-		if (_pawscent>0 && _pawscent<millis()) {
-			setPause();
-			return true;	// you only get this once.
-		}
-		return false;
-	}
 	
 	bool isSU() { return (SUPERUSER > 1); }
 	
